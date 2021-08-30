@@ -33,7 +33,7 @@ def legendre(j,i,x):
 def Bi_func(x,i,xL,xR):
     # orthonormal basis functions 
 #    return (math.sqrt(1 + 2*i)*eval_legendre(i,(-2*x + xL + xR)/(xL - xR)))/math.sqrt(-xL + xR)
-    return (math.sqrt(1 + 2*i)*legendre(0,i,(-2*x + xL + xR)/(xL - xR)))/math.sqrt(-xL + xR)
+    return (math.sqrt(1 + 2*i)*lpmv(0,i,(-2*x + xL + xR)/(xL - xR)))/math.sqrt(-xL + xR)
 def Bi_func2(x,i,xL,xR):
     # orthonormal basis functions squared
     return ((math.sqrt(1 + 2*i)/math.sqrt(xR-xL)*(eval_legendre(i,(-2*x + xL + xR)/(xL - xR)))))**2
@@ -127,12 +127,30 @@ def LU_surf_func(u,space,mul,M,xL,xR,dxL,dxR):
         sumleft += surf_func(leftspeed,u,space,j,"L",xL,xR)
     LU = np.zeros(M+1).transpose()
     for i in range(0,M+1):
-        LU[i] = rightspeed*Bi_func(xR,i,xL,xR)*((sumright)) - leftspeed*Bi_func(xL,i,xL,xR)*((sumleft))
+        if i == 0:
+            B_right = 1/math.sqrt(xR-xL)
+            B_left = 1/math.sqrt(xR-xL)
+        elif j>0:
+            B_right = math.sqrt(2*i+1)/math.sqrt(xR-xL)
+            if i%2 ==0:
+                B_left = math.sqrt(2*i+1)/math.sqrt(xR-xL)
+            else: 
+                B_left = -math.sqrt(2*i+1)/math.sqrt(xR-xL)
+        if B_left-Bi_func(xL, i, xL, xR)<0:
+            print(B_left,Bi_func(xL, i, xL, xR),i)
+        LU[i] = rightspeed*B_right*(sumright) - leftspeed*B_left*(sumleft)
     return LU 
 def surf_func(speed,u,space,j,side,xL,xR):
 #    print(side)
-    B_right = Bi_func(xR,j,xL,xR)
-    B_left = Bi_func(xL,j,xL,xR)
+    if j ==0:
+        B_right = 1/math.sqrt(xR-xL)
+        B_left = 1/math.sqrt(xR-xL)
+    else:
+         B_right = math.sqrt(2*j+1)/math.sqrt(xR-xL)
+         if j%2 ==0:
+                B_left = math.sqrt(2*j+1)/math.sqrt(xR-xL)
+         else:
+                B_left = -math.sqrt(2*j+1)/math.sqrt(xR-xL)
     if speed ==0:
         return 0
     elif speed > 0 and side == "R":
@@ -274,7 +292,7 @@ def isotropic_DG_split_rhs(t,V,N_space,N_ang,mus,ws,LL,M,sigma_t,sigma_s,dx,left
             RHS = + np.dot(G,U) + (-L_surf+ mul*np.dot(L,U)) - sigma_t*U + sigma_s*phi_c + sigma_s*P
             V_new[angle,space,:] = RHS.transpose()
     return V_new.reshape(N_ang*N_space*(M+1))
-def run_isotropic_DG(t=5,N_spaces=[1],N_angles=[256],Ms=[3],problem="ganapol"):
+def run_isotropic_DG(t=1,N_spaces=[2],N_angles=[256],Ms=[3],problem="ganapol"):
     sigma_s = 1
     sigma_t = 1
     dx = 1e-12
@@ -300,10 +318,7 @@ def run_isotropic_DG(t=5,N_spaces=[1],N_angles=[256],Ms=[3],problem="ganapol"):
         plt.plot(xs,phi,"-")
         plt.scatter(center,nodes+phi_u(center,t),marker="x",label="M=%.0f N_space %.0f N_ang %.0f"%(M,N_space,N_ang))
         plt.legend()
-#        plt.plot(center,np.sum(np.multiply(sol_last[:,:,0].transpose(),ws),axis=1),label="spaces%.0f"%N_space)
-        plt.legend()
-#        plt.ylim(-0.1,0.8)
-#        print(sol_last)    
+        plt.legend()  
         if problem == "ganapol":
             if (t==1):
                 sol = np.loadtxt("plane001.dat",delimiter="  ", usecols=[1,2])
@@ -323,4 +338,4 @@ def run_isotropic_DG(t=5,N_spaces=[1],N_angles=[256],Ms=[3],problem="ganapol"):
             plt.scatter(grid_func(k,N_space,t,left,right,dx,mus)[0],0,marker = "|",c="k")
             plt.scatter(grid_func(k,N_space,t,left,right,dx,mus)[1],0,marker = "|",c="k"),
     return sol_last 
-ganapol = run_isotropic_DG(t=5,N_spaces=[4],N_angles=[16],Ms=[5],problem="ganapol")
+ganapol = run_isotropic_DG(t=1,N_spaces=[12],N_angles=[32],Ms=[3],problem="ganapol")
