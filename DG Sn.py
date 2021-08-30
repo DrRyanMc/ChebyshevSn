@@ -22,12 +22,12 @@ import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 import scipy.integrate as integrate
 #from scipy.special import roots_legendre
-from numba import jit, uintc, float64
+# from numba import jit, uintc, float64
 import quadpy
 #from decimal import *
 from scipy.special import eval_legendre, lpmv
 import math
-@jit(float64(float64,float64,float64))
+# @jit(float64(float64,float64,float64))
 def legendre(j,i,x):
     return lpmv(j,i,x)
 def Bi_func(x,i,xL,xR):
@@ -37,16 +37,10 @@ def Bi_func(x,i,xL,xR):
 def Bi_func2(x,i,xL,xR):
     # orthonormal basis functions squared
     return ((math.sqrt(1 + 2*i)/math.sqrt(xR-xL)*(eval_legendre(i,(-2*x + xL + xR)/(xL - xR)))))**2
-def BjdBidt_func(x,i,j,k,t,N_pnts):
+def BjdBidt_func(x,i,j,k,t,xL,xR,dxL,dxR):
     # basis function B_j  X the time derivative of basis function B_i
-    result = grid_func(k,N_pnts,t)
-    xL = result[0]
-    xR= result[1]
-    dxL = result[2]
-    dxR = result[3]
-    z = (xL+ xR-2*x)/(xL-xR)
-    Bj = np.sqrt(2*j+1)/np.sqrt((xR-xL))*eval_legendre(j,z)
-    dBidt = dBdt_func(i,k,x,t,xL,xR,dxL,dxR)
+    Bj = Bi_func(x,j,xL,xR)
+    dBidt = dBdt_func(i,x,t,xL,xR,dxL,dxR)
     return Bj*dBidt
 def BjdBidx_func(x,i,j,t,N_pnts,xL,xR):
     z = (xL+ xR-2*x)/(xL-xR)
@@ -58,7 +52,7 @@ def BjBi_func(x,i,j,t,N_pnts,xL,xR):
     Bj = np.sqrt(2*j+1)/np.sqrt((xR-xL))*eval_legendre(j,z)
     Bi = np.sqrt(2*i+1)/np.sqrt((xR-xL))*eval_legendre(i,z)
     return Bi*Bj
-def dBdt_func(i,k,x,t,xL,xR,dxL,dxR):
+def dBdt_func(i,x,t,xL,xR,dxL,dxR):
     result = (np.sqrt(1 + 2*i)*(eval_legendre(i,(-2*x + xL + xR)/(xL - xR))*(dxL - dxR) + (4*(1 + i)*(-xL + xR)*(-(((-2*x + xL + xR)*eval_legendre(i,(-2*x + xL + xR)/(xL - xR)))/(xL - xR)) + eval_legendre(1 + i,(-2*x + xL + xR)/(xL - xR)))*((x - xR)*dxL + (-x + xL)*dxR))/((xL - xR)**2*(-1 + (-2*x + xL + xR)**2/(xL - xR)**2))))/(2.*(-xL + xR)**1.5)
     return result 
 def dBdx_func(i,x,z,t,xL,xR):
@@ -74,31 +68,40 @@ def Bi_phi(x,i,tt,xL,xR):
 def phi_u(x,tt):
     t = tt 
     return np.exp(-t)*np.heaviside((t+x)/t,0)*np.heaviside(1-x/t,0)/(2*t)
-@jit
-def grid_func(k,N_pnts,t):
-    L = -1.2
-    R = 1.2
-    D = R-L
-    dx = D/N_pnts
-    xL = L + k*dx
-    xR = L+(k+1)*dx
+#@jit
+def grid_func(k,N_space,t,left,right,dx,mus):
+    if (k < N_space//2):
+        xL = left[k] + 1*t*np.min(mus)*left[k]/left[0] #bt[i](i,t)
+        dxL = 1*np.min(mus)*left[k]/left[0]
+        xR = right[k] + 1*t*np.min(mus)*right[k]/left[0]
+        dxR = 1*np.min(mus)*right[k]/left[0]
+    elif (k>= N_space//2):
+        xL = left[k] + 1*t*np.max(mus)*left[k]/right[N_space-1]
+        dxL = 1*np.max(mus)*left[k]/right[N_space-1]
+        xR = right[k] + 1*t*np.max(mus)*right[k]/right[N_space-1]
+        dxR = np.max(mus)*right[k]/right[N_space-1]
     center = (xL+xR)/2
-    ############################
-    dxL = 0
-    dxR = 0
-    ############################
     return xL,xR,dxL,dxR,center
-#for i in range(0,31):
-#    print(grid_func(i+1,31,1)[0]-grid_func(i,31,1)[1])
-#def G_func(k,t,N_pnts,M):
-#    result = grid_func(k,N_pnts,t)
-#    xL = result[0]
-#    xR= result[1]
-#    G = np.zeros((M+1,M+1))
-#    for i in range(0,M+1):
-#        for j in range(0,M+1):
-#            G[i,j] = integrate.quad(BjdBidt_func,xL,xR,args=(i,j,k,t,N_pnts))[0]
-#    return G
+def G_func(k,t,N_space,M,dx,left,right,mu,xL,xR,dxL,dxR):
+    h = xR - xL
+    ih = 1/h
+    b = dxR
+    a = dxL
+    G = np.zeros((M+1,M+1))
+    for i in range(0,M+1):
+        for j in range(0,M+1):
+            ##############################################################
+            # if i>=j:
+            #     G[i,j] = integrate.quad(BjdBidt_func,xL,xR,args=(i,j,k,t,xL,xR,dxL,dxR))[0]
+            ##############################################################
+            if i==j:
+                G[i,j] = -0.5*(2*i+1)*ih*(b-a)
+            elif i>j:
+                if (i+j)%2 ==0:
+                    G[i,j] = -math.sqrt(2*j+1)*math.sqrt(2*i+1)*ih*(b-a)
+                else:
+                    G[i,j] = -math.sqrt(2*j+1)*math.sqrt(2*i+1)*ih*(b+a)
+    return G
 def L_func(t,N_pnts,M,xL,xR):
     L = np.zeros((M+1,M+1))
     for i in range(0,M+1):
@@ -114,52 +117,39 @@ def M_func(t,N_pnts,M,xL,xR):
         for j in range(0,M+1):
             MM[i,j] = integrate.quad(BjBi_func,xL,xR,args=(i,j,t,N_pnts,xL,xR))[0]
     return MM
-def LU_surf_func(u,space,mul,M,xL,xR):
+def LU_surf_func(u,space,mul,M,xL,xR,dxL,dxR):
     sumright = 0
     sumleft = 0
+    rightspeed = mul - dxR
+    leftspeed = mul-dxL
     for j in range(0,M+1):
-        sumright += surf_func(mul,u,space,j,"R",xL,xR)
-        sumleft += surf_func(mul,u,space,j,"L",xL,xR)
+        sumright += surf_func(rightspeed,u,space,j,"R",xL,xR)
+        sumleft += surf_func(leftspeed,u,space,j,"L",xL,xR)
     LU = np.zeros(M+1).transpose()
     for i in range(0,M+1):
-        LU[i] = Bi_func(xR,i,xL,xR)*((sumright)) - Bi_func(xL,i,xL,xR)*((sumleft))
-#    if np.abs(LU[0])>1e4:
-#        print("LU",LU)
-#        print("Solution vector",V)
-#        print(surf_func(mul,V,0,k,"L"))
+        LU[i] = rightspeed*Bi_func(xR,i,xL,xR)*((sumright)) - leftspeed*Bi_func(xL,i,xL,xR)*((sumleft))
     return LU 
-def surf_func(mul,u,space,j,side,xL,xR):
+def surf_func(speed,u,space,j,side,xL,xR):
 #    print(side)
     B_right = Bi_func(xR,j,xL,xR)
     B_left = Bi_func(xL,j,xL,xR)
-    if mul > 0 and side == "R":
+    if speed ==0:
+        return 0
+    elif speed > 0 and side == "R":
         return u[space,j]*B_right
-    elif mul > 0 and side =="L":
+    elif speed > 0 and side =="L":
         if space !=0:
 #            print(u[k-1,j])
             return u[space-1,j]*B_right 
         else:
             return 0
-    elif mul < 0 and side =="R":
+    elif speed < 0 and side =="R":
         if space != len(u[:,0])-1:
             return u[space+1,j]*B_left
         else:
             return 0
-    elif mul < 0 and side =="L":
+    elif speed < 0 and side =="L":
         return u[space,j]*B_left
-    
-#def GU_surf_func(U,k,mul,M,xL,xR,dxL,dxR):
-#    GU_surf = np.zeros((1,M+1))
-#    tempR = np.zeros((1,M+1))
-#    tempL =  np.zeros((1,M+1))
-#    for j in range(0,M+1):
-#        tempR[j] = Bi_func(xR,j,xL,xR)*surf_func(mul,U,j,k,"R")
-#        tempL[j] = Bi_func(xL,j,xL,xR)*surf_func(mul,U,j,k,"L")
-#    for i in range(0,M+1):
-#        right = dxR*Bi_func(i,xR,xL,xR)*np.sum(tempR,axis=1)
-#        left = dxL*Bi_func(i,xL,xL,xR)*np.sum(tempL,axis=1)
-#        GU_surf[i] = right-left
-#    return GU_surf
 def old_P_func(t,M,xL,xR):
      P = np.zeros((M+1,1))
      for i in range(0,M+1):
@@ -197,12 +187,12 @@ def P_func(t,M,xL,xR):
                         result = integrate.quad(Bi_phi,xL,xR,args=(i,t,xL,xR))[0]
                     P[i] = result
     return P
-def phi_sol_func(t,u,N_space,N_ang,M,ws):
+def phi_sol_func(t,u,N_space,N_ang,M,ws,mus,dx,left,right):
     div = 100                     #number of subdivisions in each zone 
     xs_list = np.zeros((N_space*div))
     phi_list = np.zeros((N_space*div))
     for k in range(0,N_space):
-        result = grid_func(k,N_space,t)
+        result = grid_func(k,N_space,t,left,right,dx,mus)
         xL = result[0]
         xR= result[1]
         xs = np.linspace(xL,xR,div)
@@ -216,19 +206,18 @@ def phi_sol_func(t,u,N_space,N_ang,M,ws):
         for ang2 in range(0,N_ang):
             psi_c[ang2,:] = np.sum(sol_vec[ang2,:,:],axis=0)
         phi_c = np.sum(np.multiply(psi_c.transpose(),ws),axis=1) 
-        phi = phi_c + phi_u(xs,t)
+        phi = phi_c + phi_u(xs,t+dx)
 #        phi_list[k*div:(k+1)*div] = phi
 #        print(phi[0],phi[-1])
         phi_list[k*div+1:(k+1)*div-1] = phi[1:-1] 
         phi_list[k*div] += phi[0]
         phi_list[(k+1)*div-1] += phi[-1]
-        
     return xs_list,phi_list 
-def nodevals(t,N_ang,N_space,M,u,ws):
+def nodevals(t,N_ang,N_space,M,u,ws,mus,dx,left,right):
     psi_c = np.zeros((N_ang,N_space))
     center_list = np.zeros(N_space)
     for k in range(N_space):
-        result = grid_func(k,N_space,t)
+        result = grid_func(k,N_space,t,left,right,dx,mus)
         xL = result[0]
         xR= result[1]
         center = result[4]
@@ -238,7 +227,7 @@ def nodevals(t,N_ang,N_space,M,u,ws):
                 psi_c[ang,k] += Bi_func(center,j,xL,xR)*u[ang,k,j]
     phi_c = np.sum(np.multiply(psi_c.transpose(),ws),axis=1) 
     return center_list,phi_c
-def isotropic_DG_split_rhs(t,V,N_space,N_ang,mus,ws,LL,M,sigma_t,sigma_s,problem):
+def isotropic_DG_split_rhs(t,V,N_space,N_ang,mus,ws,LL,M,sigma_t,sigma_s,dx,left,right,problem):
     """ Solves the equation:
          \frac{1}{c}\frac{\partial}{\partial t}\psi + \mu {\partial}{\partial x}\psi + \sigma_t \psi = \sigma_s \phi + S 
          By splitting into collided and uncollided (which will have a closed form solution) parts,
@@ -259,56 +248,55 @@ def isotropic_DG_split_rhs(t,V,N_space,N_ang,mus,ws,LL,M,sigma_t,sigma_s,problem
     """
     V_new = V.copy().reshape((N_ang,N_space,M+1))
     V_old = V_new.copy()
+    hx = dx/N_space
+    left = np.linspace(-dx/2,dx/2-hx, N_space)
+    right = np.linspace(-dx/2+hx,dx/2,N_space)
     for space in range(0,N_space):
-        result = grid_func(space,N_space,t)
-        xL = result[0]
+        result = grid_func(space,N_space,t,left,right,dx,mus)
         xR= result[1]
+        xL = result[0]
+        dxL = result[2]
+        dxR = result[3]
         phi_c = np.zeros(M+1).transpose()
         for i in range(0,M+1):
             phi_c[i]  = np.sum(np.multiply(V_old[:,space,i],ws))
-#            print(np.multiply(V_old[:,space,j],ws))
-#        phi_c = np.sum(np.multiply(V_new[:,space,0],ws),axis=0).transpose()
         for angle in range(N_ang):
             mul = mus[angle]
-            L_surf = LU_surf_func(V_old[angle,:,:],space,mul,M,xL,xR)
+            L_surf = LU_surf_func(V_old[angle,:,:],space,mul,M,xL,xR,dxL,dxR)
             L = LL/(xR-xL)
-            P = P_func(t,M,xL,xR)
+            G = G_func(space,t,N_space,M,dx,left,right,mus,xL,xR,dxL,dxR)
+            # P = P_func(t,M,xL,xR)
+            P = np.zeros(M+1).transpose()
+            P[0] = (math.exp(-t+dx)/(2*t+dx)*math.sqrt(xR-xL))
             U = np.zeros(M+1).transpose()
             U[:] = V_old[angle,space,:]
             ###################################################################
-#             testing new functions
-#            L_test = L_func(t,N_space,M,xL,xR)
-#            P_test = P_func(t,M,xL,xR)
-##            if((P != P_test).all()):
-##                print(P,P_test,xL,xR,t,"P functions")
-#            if((L != L_test).all()):
-#                print(L,L_test,xL,xR,t,"L functions")
-#            if problem =="steady":
-#                P = np.ones(M+1).transpose()
-            RHS = mul*(-L_surf+ np.dot(L,U)) - sigma_t*U + sigma_s*phi_c + sigma_s*P
+            RHS = + np.dot(G,U) + (-L_surf+ mul*np.dot(L,U)) - sigma_t*U + sigma_s*phi_c + sigma_s*P
             V_new[angle,space,:] = RHS.transpose()
-#            if problem =="steady":
-#                 V_new[1:,0,:] = V_new[1:,-1,:] = 0
     return V_new.reshape(N_ang*N_space*(M+1))
 def run_isotropic_DG(t=5,N_spaces=[1],N_angles=[256],Ms=[3],problem="ganapol"):
     sigma_s = 1
     sigma_t = 1
+    dx = 1e-12
     for i in range(len(N_spaces)):
         N_space = N_spaces[i]
         N_ang = N_angles[i]
+        hx = dx/N_space
+        left = np.linspace(-dx/2,dx/2-hx, N_space)
+        right = np.linspace(-dx/2+hx,dx/2,N_space)
         M = Ms[i]
         mus = quadpy.c1.gauss_lobatto(N_ang).points
         ws = quadpy.c1.gauss_lobatto(N_ang).weights
         ws = ws/np.sum(ws)
         IC = np.zeros((N_ang,N_space,M+1)) 
         L = L_func(0,N_space,M,-1/2,1/2) 
-        rhs = lambda t,V: isotropic_DG_split_rhs(t,V,N_space,N_ang,mus,ws,L,M,sigma_t,sigma_s,problem)
+        rhs = lambda t,V: isotropic_DG_split_rhs(t,V,N_space,N_ang,mus,ws,L,M,sigma_t,sigma_s,dx,left,right,problem)
         sol = solve_ivp(rhs, [0.0,t], IC.reshape(N_ang*N_space*(M+1)), method='RK45')
         if not (sol.status == 0):
             print("solver failed %.0f"%N_space)
         sol_last = sol.y[:,-1].reshape((N_ang,N_space,M+1))
-        xs,phi = phi_sol_func(t,sol_last,N_space,N_ang,M,ws) 
-        center, nodes = nodevals(t,N_ang,N_space,M,sol_last,ws)
+        xs,phi = phi_sol_func(t,sol_last,N_space,N_ang,M,ws,mus,dx,left,right) 
+        center, nodes = nodevals(t,N_ang,N_space,M,sol_last,ws,mus,dx,left,right)
         plt.plot(xs,phi,"-")
         plt.scatter(center,nodes+phi_u(center,t),marker="x",label="M=%.0f N_space %.0f N_ang %.0f"%(M,N_space,N_ang))
         plt.legend()
@@ -319,8 +307,8 @@ def run_isotropic_DG(t=5,N_spaces=[1],N_angles=[256],Ms=[3],problem="ganapol"):
         if problem == "ganapol":
             if (t==1):
                 sol = np.loadtxt("plane001.dat",delimiter="  ", usecols=[1,2])
-                plt.plot(sol[:,0], sol[:,1],'k-')
-                plt.plot(-sol[:,0], sol[:,1],'k-')
+                plt.plot(sol[:,0], sol[:,1],'k--')
+                plt.plot(-sol[:,0], sol[:,1],'k--')
             if (t==5):
                 sol = np.loadtxt("plane005.dat",delimiter="  ", usecols=[1,2])
                 plt.plot(sol[:,0], sol[:,1],'k-')
@@ -332,7 +320,7 @@ def run_isotropic_DG(t=5,N_spaces=[1],N_angles=[256],Ms=[3],problem="ganapol"):
 #        if problem =="steady":
 #            plt.plot(xs, np.ones(len(xs))*1/(sigma_t-sigma_s))
         for k in range(0,N_space):
-            plt.scatter(grid_func(k,N_space,t)[0],0,marker = "|",c="k")
-            plt.scatter(grid_func(k,N_space,t)[1],0,marker = "|",c="k")
+            plt.scatter(grid_func(k,N_space,t,left,right,dx,mus)[0],0,marker = "|",c="k")
+            plt.scatter(grid_func(k,N_space,t,left,right,dx,mus)[1],0,marker = "|",c="k"),
     return sol_last 
-ganapol = run_isotropic_DG(t=1,N_spaces=[3],N_angles=[8],Ms=[3],problem="ganapol")
+ganapol = run_isotropic_DG(t=5,N_spaces=[4],N_angles=[16],Ms=[5],problem="ganapol")
