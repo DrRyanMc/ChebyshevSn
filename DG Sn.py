@@ -22,14 +22,12 @@ import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 import scipy.integrate as integrate
 #from scipy.special import roots_legendre
-# from numba import jit, uintc, float64
+from numba import jit, uintc, float64,njit
 import quadpy
 #from decimal import *
 from scipy.special import eval_legendre, lpmv
 import math
 # @jit(float64(float64,float64,float64))
-def legendre(j,i,x):
-    return lpmv(j,i,x)
 def Bi_func(x,i,xL,xR):
     # orthonormal basis functions 
 #    return (math.sqrt(1 + 2*i)*eval_legendre(i,(-2*x + xL + xR)/(xL - xR)))/math.sqrt(-xL + xR)
@@ -63,7 +61,7 @@ def Bi_phi(x,i,tt,xL,xR):
 def phi_u(x,tt):
     t = tt 
     return np.exp(-t)*np.heaviside((t+x)/t,0)*np.heaviside(1-x/t,0)/(2*t)
-#@jit
+@jit
 def grid_func(k,N_space,t,left,right,dx,mus):
     if (k < N_space//2):
         xL = left[k] + 1*t*np.min(mus)*left[k]/left[0] #bt[i](i,t)
@@ -77,6 +75,7 @@ def grid_func(k,N_space,t,left,right,dx,mus):
         dxR = np.max(mus)*right[k]/right[N_space-1]
     center = (xL+xR)/2
     return xL,xR,dxL,dxR,center
+@jit
 def G_func(k,t,N_space,M,dx,left,right,xL,xR,dxL,dxR):
     h = xR - xL
     ih = 1/h
@@ -106,12 +105,7 @@ def L_func(t,N_pnts,M,xL,xR):
             else:
                 L[i,j] = 0
     return L 
-def M_func(t,N_pnts,M,xL,xR):
-    MM = np.zeros((M+1,M+1))
-    for i in range(0,M+1):
-        for j in range(0,M+1):
-            MM[i,j] = integrate.quad(BjBi_func,xL,xR,args=(i,j,t,N_pnts,xL,xR))[0]
-    return MM
+@jit
 def LU_surf_func(u,space,N_space,mul,M,xL,xR,dxL,dxR):
     sumright = 0
     sumleft = 0
@@ -133,6 +127,7 @@ def LU_surf_func(u,space,N_space,mul,M,xL,xR,dxL,dxR):
                 B_left = -math.sqrt(2*i+1)/math.sqrt(xR-xL)
         LU[i] = rightspeed*B_right*(sumright) - leftspeed*B_left*(sumleft)
     return LU 
+@jit 
 def surf_func(speed,u,space,j,side,xL,xR,N_space):
 #    print(side)
     if j ==0:
@@ -144,7 +139,7 @@ def surf_func(speed,u,space,j,side,xL,xR,N_space):
                 B_left = math.sqrt(2*j+1)/math.sqrt(xR-xL)
          else:
                 B_left = -math.sqrt(2*j+1)/math.sqrt(xR-xL)
-    if speed ==0:
+    if speed == 0:
         return 0
     elif speed > 0 and side == "R":
         return u[space,j]*B_right
@@ -193,9 +188,11 @@ def P_func(t,M,xL,xR):
                     P[i] = result
     return P
 def phi_sol_func(t,u,N_space,N_ang,M,ws,mus,dx,left,right):
-    div = 100                     #number of subdivisions in each zone 
+    div = 100    
+    t+=1e-12                 #number of subdivisions in each zone 
     xs_list = np.zeros((N_space*div))
     phi_list = np.zeros((N_space*div))
+    j_list = np.zeros((N_space*div))
     for k in range(0,N_space):
         result = grid_func(k,N_space,t,left,right,dx,mus)
         xL = result[0]
@@ -212,12 +209,16 @@ def phi_sol_func(t,u,N_space,N_ang,M,ws,mus,dx,left,right):
             psi_c[ang2,:] = np.sum(sol_vec[ang2,:,:],axis=0)
         phi_c = np.sum(np.multiply(psi_c.transpose(),ws),axis=1) 
         phi = phi_c + phi_u(xs,t+dx)
+        j = np.sum(np.multiply(psi_c.transpose(),ws*mus),axis=1)/phi_c
 #        phi_list[k*div:(k+1)*div] = phi
 #        print(phi[0],phi[-1])
         phi_list[k*div+1:(k+1)*div-1] = phi[1:-1] 
         phi_list[k*div] += phi[0]
         phi_list[(k+1)*div-1] += phi[-1]
-    return xs_list,phi_list 
+        j_list[k*div+1:(k+1)*div-1] = j[1:-1] 
+        j_list[k*div] += j[0]
+        j_list[(k+1)*div-1] += j[-1] 
+    return xs_list,phi_list,j_list  
 def nodevals(t,N_ang,N_space,M,u,ws,mus,dx,left,right):
     psi_c = np.zeros((N_ang,N_space))
     center_list = np.zeros(N_space)
@@ -232,6 +233,7 @@ def nodevals(t,N_ang,N_space,M,u,ws,mus,dx,left,right):
                 psi_c[ang,k] += Bi_func(center,j,xL,xR)*u[ang,k,j]
     phi_c = np.sum(np.multiply(psi_c.transpose(),ws),axis=1) 
     return center_list,phi_c
+@jit
 def isotropic_DG_split_rhs(t,V,N_space,N_ang,mus,ws,LL,M,sigma_t,sigma_s,dx,left,right,problem):
     """ Solves the equation:
          \frac{1}{c}\frac{\partial}{\partial t}\psi + \mu {\partial}{\partial x}\psi + \sigma_t \psi = \sigma_s \phi + S 
@@ -299,12 +301,14 @@ def run_isotropic_DG(t=1,N_spaces=[2],N_angles=[256],Ms=[3],problem="ganapol"):
         if not (sol.status == 0):
             print("solver failed %.0f"%N_space)
         sol_last = sol.y[:,-1].reshape((N_ang,N_space,M+1))
-        xs,phi = phi_sol_func(t,sol_last,N_space,N_ang,M,ws,mus,dx,left,right) 
+        xs,phi,j = phi_sol_func(t,sol_last,N_space,N_ang,M,ws,mus,dx,left,right) 
         center, nodes = nodevals(t,N_ang,N_space,M,sol_last,ws,mus,dx,left,right)
         plt.plot(xs,phi,"-")
         plt.scatter(center,nodes+phi_u(center,t),marker="x",label="M=%.0f N_space %.0f N_ang %.0f"%(M,N_space,N_ang))
+        plt.plot(xs,j)
         plt.legend()
         plt.legend()  
+        print(xs)
         if problem == "ganapol":
             if (t==1):
                 sol = np.loadtxt("plane001.dat",delimiter="  ", usecols=[1,2])
@@ -324,4 +328,4 @@ def run_isotropic_DG(t=1,N_spaces=[2],N_angles=[256],Ms=[3],problem="ganapol"):
             plt.scatter(grid_func(k,N_space,t,left,right,dx,mus)[0],0,marker = "|",c="k")
             plt.scatter(grid_func(k,N_space,t,left,right,dx,mus)[1],0,marker = "|",c="k"),
     return sol_last 
-ganapol = run_isotropic_DG(t=1,N_spaces=[10],N_angles=[32],Ms=[3],problem="ganapol")
+ganapol = run_isotropic_DG(t=1,N_spaces=[32],N_angles=[64],Ms=[3],problem="ganapol")
