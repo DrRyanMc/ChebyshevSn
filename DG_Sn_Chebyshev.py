@@ -370,35 +370,35 @@ def run_isotropic_DG(tfinal=1,N_spaces=[2],N_angles=[256], M = 3,problem="ganapo
         sol_last = sol.y[:,-1].reshape((N_ang,N_space,M+1))
         xs,phi,j = phi_sol_func(tfinal,sol_last,N_space,N_ang,M,ws,mus,dx,left,right,mode) 
         center, nodes = nodevals(tfinal,N_ang,N_space,M,sol_last,ws,mus,dx,left,right,tfinal,mode)
-        plt.plot(xs,phi,"-")
-        plt.scatter(center,nodes+phi_u(center,tfinal,dx),marker="x",label="M=%.0f N_space %.0f N_ang %.0f"%(M,N_space,N_ang))
-        plt.legend()
-        if problem == "ganapol":
-            if (tfinal==1):
-                pl = np.loadtxt("plane001.dat",delimiter="  ", usecols=[1,2])
-                plt.plot(pl[:,0], pl[:,1],'k--')
-                plt.plot(-pl[:,0], pl[:,1],'k--')
-            if (tfinal==5):
-                pl = np.loadtxt("plane005.dat",delimiter="  ", usecols=[1,2])
-                plt.plot(pl[:,0], pl[:,1],'k-')
-                plt.plot(-pl[:,0], pl[:,1],'k-')
-            if (tfinal==10):
-                pl = np.loadtxt("plane010.dat",delimiter="  ", usecols=[1,2])
-                plt.plot(pl[:,0], pl[:,1],'k-')
-                plt.plot(-pl[:,0], pl[:,1],'k-')
-        save_data_phi = np.zeros((2,len(xs)))
-        save_data_phi[0] = xs
-        save_data_phi[1] = phi
+        save_data_phi = np.zeros((2,len(center)))
+        save_data_phi[0] = center
+        save_data_phi[1] = nodes
         if mode =="static":
             np.save("ganapol_t=%.0f_%.0f_spaces_%.0f_angles_M_%.0f_staticgrid"%(tfinal,N_space,N_ang,M), save_data_phi)
         elif mode == "linear":
             np.save("ganapol_t=%.0f_%.0f_spaces_%.0f_angles_M_%.0f_lineargrid"%(tfinal,N_space,N_ang,M), save_data_phi)
-        for k in range(0,N_space):
-            plt.scatter(grid_func(k,N_space,tfinal,left,right,dx,mus,tfinal,mode)[0],0,marker = "|",c="k")
-            plt.scatter(grid_func(k,N_space,tfinal,left,right,dx,mus,tfinal,mode)[1],0,marker = "|",c="k"),
+        if problem == "ganapol":
+            if (tfinal==1):
+                pl = np.loadtxt("plane001.dat",delimiter="  ", usecols=[1,2])
+                # plt.plot(pl[:,0], pl[:,1],'k--')
+                # plt.plot(-pl[:,0], pl[:,1],'k--')
+            if (tfinal==5):
+                pl = np.loadtxt("plane005.dat",delimiter="  ", usecols=[1,2])
+                # plt.plot(pl[:,0], pl[:,1],'k-')
+                # plt.plot(-pl[:,0], pl[:,1],'k-')
+            if (tfinal==10):
+                pl = np.loadtxt("plane010.dat",delimiter="  ", usecols=[1,2])
+                # plt.plot(pl[:,0], pl[:,1],'k-')
+                # plt.plot(-pl[:,0], pl[:,1],'k-')
+        # plt.plot(xs,phi,"-")
+        # plt.scatter(center,nodes+phi_u(center,tfinal,dx),marker="x",label="M=%.0f N_space %.0f N_ang %.0f"%(M,N_space,N_ang))
+        # plt.legend()
+        # for k in range(0,N_space):
+        #     plt.scatter(grid_func(k,N_space,tfinal,left,right,dx,mus,tfinal,mode)[0],0,marker = "|",c="k")
+        #     plt.scatter(grid_func(k,N_space,tfinal,left,right,dx,mus,tfinal,mode)[1],0,marker = "|",c="k"),
+        # plt.show()
         sol_ganapol = interp1d(pl[:,0],pl[:,1], kind="cubic") 
         errRMS[i] = np.sqrt(np.mean((nodes + np.exp(-tfinal)/(2*tfinal+dx) - sol_ganapol(np.abs(center)))**2))
-    plt.show()
     RMSdata = np.zeros((2,len(N_spaces)))
     RMSdata[0] = N_spaces
     RMSdata[1] = errRMS
@@ -408,14 +408,16 @@ def run_isotropic_DG(tfinal=1,N_spaces=[2],N_angles=[256], M = 3,problem="ganapo
     elif mode == "static":
         np.save("errRMS_staticgrid_M=%.0f_tfinal=%.0f", RMSdata)
     return sol_last
+
+
 ### interactive inputs 
-# space_input = input("input number of points separated by a space: ").split(' ')
-# I = [int(num) for num in space_input]
-# ang = []
-# for i in range(len(I)):
-#     ang.append(int(I[i]*4))
-# tf = int(input("enter the final time : "))
-# MM = int(input("enter the number of basis functions: "))
-# ganapol = run_isotropic_DG(tfinal=tf, N_spaces = I, N_angles = ang, M = MM , problem="ganapol", mode = "linear")
+space_input = input("input number of points separated by a space: ").split(' ')
+I = [int(num) for num in space_input]
+ang = []
+for i in range(len(I)):
+    ang.append(int(I[i]*4))
+tf = int(input("enter the final time : "))
+MM = int(input("enter the number of basis functions: "))
+ganapol = run_isotropic_DG(tfinal=tf, N_spaces = I, N_angles = ang, M = MM , problem="ganapol", mode = "linear")
 
 
