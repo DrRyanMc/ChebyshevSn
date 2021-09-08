@@ -22,14 +22,12 @@ import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 import scipy.integrate as integrate
 #from scipy.special import roots_legendre
-# from numba import jit, uintc, float64
+from numba import jit, uintc, float64,njit
 import quadpy
 #from decimal import *
 from scipy.special import eval_legendre, lpmv
 import math
 # @jit(float64(float64,float64,float64))
-def legendre(j,i,x):
-    return lpmv(j,i,x)
 def Bi_func(x,i,xL,xR):
     # orthonormal basis functions 
 #    return (math.sqrt(1 + 2*i)*eval_legendre(i,(-2*x + xL + xR)/(xL - xR)))/math.sqrt(-xL + xR)
@@ -63,7 +61,7 @@ def Bi_phi(x,i,tt,xL,xR):
 def phi_u(x,tt):
     t = tt 
     return np.exp(-t)*np.heaviside((t+x)/t,0)*np.heaviside(1-x/t,0)/(2*t)
-#@jit
+@jit
 def grid_func(k,N_space,t,left,right,dx,mus):
     if (k < N_space//2):
         xL = left[k] + 1*t*np.min(mus)*left[k]/left[0] #bt[i](i,t)
@@ -77,6 +75,7 @@ def grid_func(k,N_space,t,left,right,dx,mus):
         dxR = np.max(mus)*right[k]/right[N_space-1]
     center = (xL+xR)/2
     return xL,xR,dxL,dxR,center
+@jit
 def G_func(k,t,N_space,M,dx,left,right,xL,xR,dxL,dxR):
     h = xR - xL
     ih = 1/h
@@ -106,6 +105,7 @@ def L_func(t,N_pnts,M,xL,xR):
             else:
                 L[i,j] = 0
     return L 
+@jit
 def LU_surf_func(u,space,N_space,mul,M,xL,xR,dxL,dxR):
     sumright = 0
     sumleft = 0
@@ -127,6 +127,7 @@ def LU_surf_func(u,space,N_space,mul,M,xL,xR,dxL,dxR):
                 B_left = -math.sqrt(2*i+1)/math.sqrt(xR-xL)
         LU[i] = rightspeed*B_right*(sumright) - leftspeed*B_left*(sumleft)
     return LU 
+@jit 
 def surf_func(speed,u,space,j,side,xL,xR,N_space):
 #    print(side)
     if j ==0:
@@ -138,7 +139,7 @@ def surf_func(speed,u,space,j,side,xL,xR,N_space):
                 B_left = math.sqrt(2*j+1)/math.sqrt(xR-xL)
          else:
                 B_left = -math.sqrt(2*j+1)/math.sqrt(xR-xL)
-    if speed ==0:
+    if speed == 0:
         return 0
     elif speed > 0 and side == "R":
         return u[space,j]*B_right
