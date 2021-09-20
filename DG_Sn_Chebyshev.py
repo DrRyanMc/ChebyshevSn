@@ -429,7 +429,7 @@ def isotropic_DG_split_staticgrid_rhs_(t,V,N_space,N_ang,mus,ws,LL,M,sigma_t_lis
             RHS = -L_surf+ mul*np.dot(L,U) - sigma_t*U + sigma_s*phi_c + sigma_s*P
             V_new[angle,space,:] = RHS.transpose()
     return V_new.reshape(N_ang*N_space*(M+1))
-def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="linear"):
+def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="linear", weights = "gauss_lobatto"):
     plt.figure(6)
     if problem == "ganapol":
             if (tfinal==1):
@@ -466,16 +466,19 @@ def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="lin
     for i in range(len(N_spaces)):
         N_space = N_spaces[i]
         N_ang = N_angles[i]
+        if weights == "gauss_lobatto":
+            mus = quadpy.c1.gauss_lobatto(N_ang).points
+            ws = quadpy.c1.gauss_lobatto(N_ang).weights
+        elif weights == "newton_cotes":
+            mus = quadpy.c1.newton_cotes_closed(N_ang).points
+            ws = quadpy.c1.newton_cotes_closed(N_ang).weights
+        ws = ws/np.sum(ws)
+        print(mus)
         sigma_s_list = np.ones(N_space)
         sigma_t_list = np.ones(N_space)
         hx = dx/N_space
         left = np.linspace(-dx/2, dx/2-hx, N_space)
         right = np.linspace(-dx/2+hx, dx/2, N_space)
-        # mus = quadpy.c1.gauss_lobatto(N_ang).points
-        # ws = quadpy.c1.gauss_lobatto(N_ang).weights
-        mus = quadpy.c1.newton_cotes_closed(N_ang).points
-        ws = quadpy.c1.newton_cotes_closed(N_ang).weights
-        ws = ws/np.sum(ws)
         IC = np.zeros((N_ang,N_space,M+1)) 
         L = L_func(0,N_space,M,-1/2,1/2) 
         if mode == "finite2":
@@ -490,7 +493,7 @@ def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="lin
             rhs = lambda t,V: isotropic_DG_split_staticgrid_rhs_(t, V, N_space, N_ang, mus, ws, L, M, sigma_t_list, sigma_s_list, dx, left, right, problem, mode, tfinal)
         elif mode == "linear" or mode == "sqrt" or mode == "finite":
             rhs = lambda t,V: isotropic_DG_split_rhs(t, V, N_space, N_ang, mus, ws, L, M, sigma_t_list, sigma_s_list, dx, left, right, problem, mode, tfinal)
-        sol = integrate.solve_ivp(rhs, [0.0,tfinal], IC.reshape(N_ang*N_space*(M+1)), method='DOP853', t_eval = [tfinal], rtol = 10e-8, atol = 1e-6)
+        sol = integrate.solve_ivp(rhs, [0.0,tfinal], IC.reshape(N_ang*N_space*(M+1)), method='RK45', t_eval = [tfinal], rtol = 10e-8, atol = 1e-6)
         if not (sol.status == 0):
             print("solver failed %.0f"%N_space)
         sol_last = sol.y[:,-1].reshape((N_ang,N_space,M+1))
@@ -522,4 +525,4 @@ def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="lin
         plt.show()
     print("Spaces = ", N_spaces,"ERROR RMS = ", errRMS)
     return sol_last
-run_isotropic_DG(tfinal = 1, N_spaces = [2], M = 1, problem ="ganapol", mode = "linear")
+run_isotropic_DG(tfinal = 1, N_spaces = [2], M = 1, problem ="ganapol", mode = "linear", weights = "newton_cotes")
