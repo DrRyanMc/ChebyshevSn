@@ -488,7 +488,7 @@ def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="lin
             rhs = lambda t,V: isotropic_DG_split_staticgrid_rhs_(t, V, N_space, N_ang, mus, ws, L, M, sigma_t_list, sigma_s_list, dx, left, right, problem, mode, tfinal)
         elif mode == "linear" or mode == "sqrt" or mode == "finite":
             rhs = lambda t,V: isotropic_DG_split_rhs(t, V, N_space, N_ang, mus, ws, L, M, sigma_t_list, sigma_s_list, dx, left, right, problem, mode, tfinal)
-        sol = integrate.solve_ivp(rhs, [0.0,tfinal], IC.reshape(N_ang*N_space*(M+1)), method='DOP853', t_eval = [tfinal])
+        sol = integrate.solve_ivp(rhs, [0.0,tfinal], IC.reshape(N_ang*N_space*(M+1)), method='DOP853', t_eval = [tfinal], rtol = 10e-8, atol = 1e-6)
         if not (sol.status == 0):
             print("solver failed %.0f"%N_space)
         sol_last = sol.y[:,-1].reshape((N_ang,N_space,M+1))
