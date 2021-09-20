@@ -67,7 +67,7 @@ def phi_u_finite(x,tt,dx):
     return np.exp(-t)*np.heaviside((t+x)/t,0)*np.heaviside(1-x/t,0)*np.heaviside(1+x,0)*np.heaviside(1-x,0)/(2*t+dx)
 @jit
 def grid_func(k,N_space,t,left,right,dx,mus,tfinal,mode):
-    if mode == "static":
+    if mode == "static" or mode == "finite2":
         Leftedge = -tfinal
         Rightedge = tfinal
         D = Rightedge-Leftedge
@@ -92,7 +92,7 @@ def grid_func(k,N_space,t,left,right,dx,mus,tfinal,mode):
             dxL = 1*np.max(mus)*math.sqrt(left[k]/right[N_space-1])
             xR = right[k] + 1*t*np.max(mus)*math.sqrt(right[k]/right[N_space-1])
             dxR = 1*np.max(mus)*math.sqrt(right[k]/right[N_space-1])
-    elif mode == "linear" or mode == "finite2":
+    elif mode == "linear":
         speed = np.max(mus)
         if (k < N_space//2):
             xL = left[k] + -1*t*(speed)*left[k]/left[0] #bt[i](i,t)
@@ -161,7 +161,7 @@ def L_func(t,N_pnts,M,xL,xR):
                 L[i,j] = 0
     return L 
 @jit
-def LU_surf_func(u,space,N_space,mul,M,xL,xR,dxL,dxR):
+def LU_surf_func(u,space,N_space,mul,M,xL,xR,dxL,dxR,mode):
     sumright = 0
     sumleft = 0
     rightspeed = mul - dxR
@@ -169,6 +169,11 @@ def LU_surf_func(u,space,N_space,mul,M,xL,xR,dxL,dxR):
     for j in range(0,M+1):
         sumright += surf_func(rightspeed,u,space,j,"R",xL,xR,N_space)
         sumleft += surf_func(leftspeed,u,space,j,"L",xL,xR,N_space)
+    # else: 
+    #     for j in range(0,M+1):
+    #         sumright += surf_func_finite2(rightspeed,u,space,j,"R",xL,xR,N_space)
+    #         sumleft += surf_func_finite2(leftspeed,u,space,j,"L",xL,xR,N_space)
+        
     LU = np.zeros(M+1).transpose()
     for i in range(0,M+1):
         if i == 0:
@@ -185,6 +190,7 @@ def LU_surf_func(u,space,N_space,mul,M,xL,xR,dxL,dxR):
 @jit 
 def surf_func(speed,u,space,j,side,xL,xR,N_space):
 #    print(side)
+    center = (xL+xR)/2
     if j ==0:
         B_right = 1/math.sqrt(xR-xL)
         B_left = 1/math.sqrt(xR-xL)
@@ -211,10 +217,35 @@ def surf_func(speed,u,space,j,side,xL,xR,N_space):
             return 0
     elif speed < 0 and side =="L":
         return u[space,j]*B_left
+@jit 
+def surf_func_finite2(speed,u,space,j,side,xL,xR,N_space,):
+    center = (xL+xR)/2
+    if j ==0:
+        B_right = 1/math.sqrt(xR-xL)
+        B_left = 1/math.sqrt(xR-xL)
+    else:
+         B_right = math.sqrt(2*j+1)/math.sqrt(xR-xL)
+         if j%2 ==0:
+                B_left = math.sqrt(2*j+1)/math.sqrt(xR-xL)
+         else:
+                B_left = -math.sqrt(2*j+1)/math.sqrt(xR-xL)
+    if speed == 0:
+        return 0
+    if -1 <= center <= 1:
+        if speed > 0 and side == "R" :
+            return u[space,j]*B_right
+        elif speed > 0 and side =="L" and (space !=0):
+            return u[space-1,j]*B_right 
+        elif speed < 0 and side =="R" and (space != N_space-1):
+            return u[space+1,j]*B_left
+        elif speed < 0 and side =="L":
+            return u[space,j]*B_left
+        else:
+            return 0
 # @jit 
 def P_func(t,M,xL,xR,mode):
     P = np.zeros(M+1).transpose()
-    if mode == "static":
+    if mode == "static" or mode =="finite2":
         if t>0:
             if ((xR<=t) and (xL>=-t)):
                 P[0] = math.exp(-t)*math.sqrt(xR-xL)/2/t
@@ -243,10 +274,6 @@ def P_func(t,M,xL,xR,mode):
         #                    print("zone integrated",xL,"left",xR,"right",t,"t")
                             result = integrate.quad(Bi_phi,xL,xR,args=(i,t,xL,xR))[0]
                         P[i] = result
-    elif mode =="finite2":
-        for i in range(0,M+1):
-            result = integrate.quad(Bi_phi,xL,xR,args=(i,t,xL,xR))[0]
-            P[i] = result
     return P
 def phi_sol_func(t,u,N_space,N_ang,M,ws,mus,dx,left,right,mode):
     div = (M+1)                   #number of subdivisions in each zone 
@@ -283,8 +310,7 @@ def phi_sol_func(t,u,N_space,N_ang,M,ws,mus,dx,left,right,mode):
         # j_list[k*div+1:(k+1)*div-1] = jj[1:-1] 
         # j_list[k*div] += jj[0]
         # j_list[(k+1)*div-1] += jj[-1] 
-        print(xs_list)
-        print(phi_list)
+
     return xs_list,phi_list,j_list  
 
 def pointsol_func(u,x,t,N_ang,N_space,ws,M,left,right,dx,mus,tfinal,mode):
@@ -293,7 +319,7 @@ def pointsol_func(u,x,t,N_ang,N_space,ws,M,left,right,dx,mus,tfinal,mode):
         result = grid_func(k,N_space,t,left,right,dx,mus,tfinal,mode)
         xL = result[0]
         xR= result[1]
-        if (xL < x) and (xR>x):
+        if (xL <= x) and (xR >= x):
             space = k 
     result = grid_func(space,N_space,t,left,right,dx,mus,tfinal,mode)
     xL = result[0]
@@ -307,7 +333,7 @@ def pointsol_func(u,x,t,N_ang,N_space,ws,M,left,right,dx,mus,tfinal,mode):
     # plt.scatter(x,phi)
     return phi 
 @jit
-def isotropic_DG_split_rhs(t,V,N_space,N_ang,mus,ws,LL,M,sigma_t,sigma_s,dx,left,right,problem,mode,tfinal):
+def isotropic_DG_split_rhs(t,V,N_space,N_ang,mus,ws,LL,M,sigma_t_list,sigma_s_list,dx,left,right,problem,mode,tfinal):
     """ Solves the equation:
          \frac{1}{c}\frac{\partial}{\partial t}\psi + \mu {\partial}{\partial x}\psi + \sigma_t \psi = \sigma_s \phi + S 
          By splitting into collided and uncollided (which will have a closed form solution) parts,
@@ -331,7 +357,9 @@ def isotropic_DG_split_rhs(t,V,N_space,N_ang,mus,ws,LL,M,sigma_t,sigma_s,dx,left
     hx = dx/N_space
     left = np.linspace(-dx/2,dx/2-hx, N_space)
     right = np.linspace(-dx/2+hx,dx/2,N_space)
-    for space in range(0,N_space):
+    for space in prange(0,N_space):
+        sigma_t = sigma_t_list[space]
+        sigma_s = sigma_s_list[space]
         result = grid_func(space,N_space,t,left,right,dx,mus,tfinal,mode)
         xR= result[1]
         xL = result[0]
@@ -347,14 +375,14 @@ def isotropic_DG_split_rhs(t,V,N_space,N_ang,mus,ws,LL,M,sigma_t,sigma_s,dx,left
             phi_c[i]  = np.sum(np.multiply(V_old[:,space,i],ws))
         for angle in range(N_ang):
             mul = mus[angle]
-            L_surf = LU_surf_func(V_old[angle,:,:],space,N_space,mul,M,xL,xR,dxL,dxR)
+            L_surf = LU_surf_func(V_old[angle,:,:],space,N_space,mul,M,xL,xR,dxL,dxR,mode)
             U = np.zeros(M+1).transpose()
             U[:] = V_old[angle,space,:]
             ###################################################################
             RHS = np.dot(G,U) + -L_surf+ mul*np.dot(L,U) - sigma_t*U + sigma_s*phi_c + sigma_s*P
             V_new[angle,space,:] = RHS.transpose()
     return V_new.reshape(N_ang*N_space*(M+1))
-def isotropic_DG_split_staticgrid_rhs_(t,V,N_space,N_ang,mus,ws,LL,M,sigma_t,sigma_s,dx,left,right,problem,mode,tfinal):
+def isotropic_DG_split_staticgrid_rhs_(t,V,N_space,N_ang,mus,ws,LL,M,sigma_t_list,sigma_s_list,dx,left,right,problem,mode,tfinal):
     # since numba doesn't like scipy, I made a new RHS for when the grid is not moving 
     """ Solves the equation:
          \frac{1}{c}\frac{\partial}{\partial t}\psi + \mu {\partial}{\partial x}\psi + \sigma_t \psi = \sigma_s \phi + S 
@@ -380,6 +408,8 @@ def isotropic_DG_split_staticgrid_rhs_(t,V,N_space,N_ang,mus,ws,LL,M,sigma_t,sig
     left = np.linspace(-dx/2,dx/2-hx, N_space)
     right = np.linspace(-dx/2+hx,dx/2,N_space)
     for space in prange(0,N_space):
+        sigma_t = sigma_t_list[space]
+        sigma_s = sigma_s_list[space]
         result = grid_func(space,N_space,t,left,right,dx,mus,tfinal,mode)
         xR= result[1]
         xL = result[0]
@@ -387,32 +417,20 @@ def isotropic_DG_split_staticgrid_rhs_(t,V,N_space,N_ang,mus,ws,LL,M,sigma_t,sig
         dxR = result[3]
         phi_c = np.zeros(M+1).transpose()
         L = LL/(xR-xL)
-        if mode == "finite2":
-            if t <= 1:
-                P = P_func(t, M, xL, xR, mode)
-            else: 
-                if (xL > 1) or (xR < -1):
-                    P = 0 
-                    sigma_s = 0
-                    sigma_t = 0
-                elif (xL<1) and (xR>1) or (xL<-1) and (xR>-1):
-                    P = P_func(t, M, xL, xR, mode)
-                    
-        elif mode == "static":
-            P = P_func(t, M, xL, xR)
+        P = P_func(t, M, xL, xR,mode)
         for i in range(0,M+1):
             phi_c[i]  = np.sum(np.multiply(V_old[:,space,i],ws))
         for angle in range(N_ang):
             mul = mus[angle]
-            L_surf = LU_surf_func(V_old[angle,:,:],space,N_space,mul,M,xL,xR,dxL,dxR)
+            L_surf = LU_surf_func(V_old[angle,:,:],space,N_space,mul,M,xL,xR,dxL,dxR,mode)
             U = np.zeros(M+1).transpose()
             U[:] = V_old[angle,space,:]
-            G = G_func(space,t,N_space,M,dx,xL,xR,dxL,dxR)
             ###################################################################
-            RHS = np.dot(G,U) + -L_surf+ mul*np.dot(L,U) - sigma_t*U + sigma_s*phi_c + sigma_s*P
+            RHS = -L_surf+ mul*np.dot(L,U) - sigma_t*U + sigma_s*phi_c + sigma_s*P
             V_new[angle,space,:] = RHS.transpose()
     return V_new.reshape(N_ang*N_space*(M+1))
 def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="linear"):
+    plt.figure(6)
     if problem == "ganapol":
             if (tfinal==1):
                 pl = np.loadtxt("plane001.dat",delimiter="  ", usecols=[1,2])
@@ -427,28 +445,29 @@ def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="lin
                 plt.plot(pl[:,0], pl[:,1],'k-')
                 plt.plot(-pl[:,0], pl[:,1],'k-')
     N_angles = []
-    testpoints = [0.01,0.02]
+    testpoints = [0.01,0.1,0.25,0.5,0.75,0.9]
     testmatrix = np.zeros((len(N_spaces) + 2, len(testpoints),))
+    RMSdata = np.zeros((2,len(N_spaces)))
     testmatrix[0] = testpoints
+    RMSdata[0] = N_spaces
     if tfinal == 1 or tfinal == 5 or tfinal == 10: 
         for it in range(len(testpoints)):
             index = np.argmin(np.abs(pl[:,0] - testpoints[it]))
             testmatrix[1,it] = pl[index,1]
     for ang in range(len(N_spaces)):
         N_angles.append(int(N_spaces[ang]*(2**(M+1))))
-        # N_angles.append(512)
-    sigma_s = 1
-    sigma_t = 1
     errRMS = np.zeros(len(N_spaces))
-    if mode == "linear" or mode =="finite" or mode == "finite2":
-        dx = 1e-12
+    if mode == "linear" or mode =="finite":
+        dx = 1e-16
     elif mode == "sqrt":
         dx = 1e-12
     else:
         dx = 0 
-    for i in prange(len(N_spaces)):
+    for i in range(len(N_spaces)):
         N_space = N_spaces[i]
         N_ang = N_angles[i]
+        sigma_s_list = np.ones(N_space)
+        sigma_t_list = np.ones(N_space)
         hx = dx/N_space
         left = np.linspace(-dx/2, dx/2-hx, N_space)
         right = np.linspace(-dx/2+hx, dx/2, N_space)
@@ -457,47 +476,48 @@ def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="lin
         ws = ws/np.sum(ws)
         IC = np.zeros((N_ang,N_space,M+1)) 
         L = L_func(0,N_space,M,-1/2,1/2) 
+        if mode == "finite2":
+            for k in range(N_space):
+                result = grid_func(k,N_space,tfinal,left,right,dx,mus,tfinal,mode)
+                xR= result[1]
+                xL = result[0]
+                if xL >= 1 or xR <=-1:
+                     sigma_t_list[k] = 0
+                     sigma_s_list[k] = 0 
         if mode == "static" or mode == "finite2":
-            rhs = lambda t,V: isotropic_DG_split_staticgrid_rhs_(t, V, N_space, N_ang, mus, ws, L, M, sigma_t, sigma_s, dx, left, right, problem, mode, tfinal)
+            rhs = lambda t,V: isotropic_DG_split_staticgrid_rhs_(t, V, N_space, N_ang, mus, ws, L, M, sigma_t_list, sigma_s_list, dx, left, right, problem, mode, tfinal)
         elif mode == "linear" or mode == "sqrt" or mode == "finite":
-            rhs = lambda t,V: isotropic_DG_split_rhs(t, V, N_space, N_ang, mus, ws, L, M, sigma_t, sigma_s, dx, left, right, problem, mode, tfinal)
-        sol = integrate.solve_ivp(rhs, [0.0,tfinal], IC.reshape(N_ang*N_space*(M+1)), method='DOP853')
+            rhs = lambda t,V: isotropic_DG_split_rhs(t, V, N_space, N_ang, mus, ws, L, M, sigma_t_list, sigma_s_list, dx, left, right, problem, mode, tfinal)
+        sol = integrate.solve_ivp(rhs, [0.0,tfinal], IC.reshape(N_ang*N_space*(M+1)), method='DOP853', t_eval = [tfinal])
         if not (sol.status == 0):
             print("solver failed %.0f"%N_space)
         sol_last = sol.y[:,-1].reshape((N_ang,N_space,M+1))
         xs,phi,j = phi_sol_func(tfinal,sol_last,N_space,N_ang,M,ws,mus,dx,left,right,mode) 
-        # nodes, nodevals = nodeval_func(tfinal,N_ang,N_space,M,sol_last,ws,mus,dx,left,right,tfinal,mode)
         save_data_phi = np.zeros((2,len(phi)))
         save_data_phi[0] = xs
         save_data_phi[1] = phi
+        if tfinal == 1 or tfinal == 5 or tfinal == 10: 
+            sol_ganapol = interp1d(pl[:,0],pl[:,1], kind="cubic") 
+            errRMS[i] = np.sqrt(np.mean((phi  - sol_ganapol(np.abs(xs)))**2))
+        RMSdata[1] = errRMS
         if mode =="static":
             np.save("ganapol_t=%.0f_%.0f_spaces_%.0f_angles_M_%.0f_staticgrid"%(tfinal,N_space,N_ang,M), save_data_phi)
+            np.save("errRMS_stat_M=%.0f_tfinal=%.0f"%(M,tfinal), RMSdata)
+            np.save("testpoints_stat_M=%.0f_tfinal=%.0f"%(M,tfinal),testmatrix)
         elif mode == "linear":
             np.save("ganapol_t=%.0f_%.0f_spaces_%.0f_angles_M_%.0f_lineargrid"%(tfinal,N_space,N_ang,M), save_data_phi)
+            np.save("errRMS_lin_M=%.0f_tfinal=%.0f"%(M,tfinal), RMSdata)
+            np.save("testpoints_lin_M=%.0f_tfinal=%.0f"%(M,tfinal),testmatrix)
         for jt in range(len(testpoints)):
             x = testpoints[jt]
             phipoint = pointsol_func(sol_last, x, tfinal, N_ang, N_space, ws, M, left, right, dx, mus, tfinal, mode)  
             testmatrix[i+2,jt] = phipoint
-        plt.plot(xs,phi,"-")
-        # plt.scatter(nodes,nodevals+phi_u(nodes,tfinal,dx),marker="x",label="M=%.0f N_space %.0f N_ang %.0f"%(M,N_space,N_ang))
+        plt.plot(xs,phi,"-", label = "time %.1f"%tfinal)
         plt.legend()
         for k in range(0,N_space):
             plt.scatter(grid_func(k,N_space,tfinal,left,right,dx,mus,tfinal,mode)[0],0,marker = "|",c="k")
             plt.scatter(grid_func(k,N_space,tfinal,left,right,dx,mus,tfinal,mode)[1],0,marker = "|",c="k"),
         plt.show()
-        if tfinal == 1 or tfinal == 5 or tfinal == 10: 
-            sol_ganapol = interp1d(pl[:,0],pl[:,1], kind="cubic") 
-            errRMS[i] = np.sqrt(np.mean((phi  - sol_ganapol(np.abs(xs)))**2))
-    RMSdata = np.zeros((2,len(N_spaces)))
-    RMSdata[0] = N_spaces
-    RMSdata[1] = errRMS
-    
     print("Spaces = ", N_spaces,"ERROR RMS = ", errRMS)
-    if mode =="linear":
-        np.save("errRMS_lin_M=%.0f_tfinal=%.0f"%(M,tfinal), RMSdata)
-        np.save("testpoints_lin_M=%.0f_tfinal=%.0f"%(M,tfinal),testmatrix)
-    elif mode == "static":
-        np.save("errRMS_stat_M=%.0f_tfinal=%.0f"%(M,tfinal), RMSdata)
-        np.save("testpoints_stat_M=%.0f_tfinal=%.0f"%(M,tfinal),testmatrix)
     return sol_last
-run_isotropic_DG(tfinal = 5, N_spaces = [4], M = 1, problem ="ganapol", mode = "finite2")
+run_isotropic_DG(tfinal = 2, N_spaces = [20], M = 1, problem ="ganapol", mode = "finite2")
