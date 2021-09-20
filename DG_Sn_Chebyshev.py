@@ -470,8 +470,8 @@ def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="lin
             mus = quadpy.c1.gauss_lobatto(N_ang).points
             ws = quadpy.c1.gauss_lobatto(N_ang).weights
         elif weights == "newton_cotes":
-            mus = quadpy.c1.newton_cotes_closed(N_ang).points
-            ws = quadpy.c1.newton_cotes_closed(N_ang).weights
+            mus = quadpy.c1.newton_cotes_closed(N_ang-1).points
+            ws = quadpy.c1.newton_cotes_closed(N_ang-1).weights
         ws = ws/np.sum(ws)
         print(mus)
         sigma_s_list = np.ones(N_space)
