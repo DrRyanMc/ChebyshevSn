@@ -28,7 +28,31 @@ import quadpy
 from scipy.special import eval_legendre, lpmv
 import math
 from scipy.interpolate import interp1d
+import h5py
 # @jit(float64(float64,float64,float64))
+def process(mode):
+    if mode =="finite" or mode =="finite2":
+        with h5py.File('output.h5', 'r') as f:
+            x = f['tally/spatial_grid'][:]
+            t = f['tally/time_grid'][:]
+        dx = x[1:]-x[:-1]
+        K = len(t)-1
+        dx    = (x[1]-x[0])
+        x_mid = 0.5*(x[:-1]+x[1:])
+        with h5py.File('output.h5', 'r') as f:
+            phi_edge    = f['tally/flux-edge/mean'][:]/dx
+            phi_edge_sd = f['tally/flux-edge/sdev'][:]/dx  
+        for k in range(K):
+            plt.figure(6)
+            plt.plot(x_mid,phi_edge[k],'--k',label="MC")
+            plt.fill_between(x_mid,phi_edge[k]-phi_edge_sd[k],phi_edge[k]+phi_edge_sd[k],alpha=0.2,color='b')
+            plt.xlabel(r'$x$, cm')
+            plt.ylabel('Flux')
+            plt.xlim([max(x[0],-t[k+1]*1.6),min(t[k+1]*1.6,x[-1])])
+            plt.grid()
+            plt.legend()
+            plt.title(r'$\bar{\phi}_i(t=%.1f)$'%t[k+1])
+            plt.show()
 def Bi_func(x,i,xL,xR):
     # orthonormal basis functions 
     # return (math.sqrt(1 + 2*i)*eval_legendre(i,(-2*x + xL + xR)/(xL - xR)))/math.sqrt(-xL + xR)
@@ -65,6 +89,16 @@ def phi_u(x,tt,dx):
 def phi_u_finite(x,tt,dx):
     t = tt
     return np.exp(-t)*np.heaviside((t+x)/t,0)*np.heaviside(1-x/t,0)*np.heaviside(1+x,0)*np.heaviside(1-x,0)/(2*t+dx)
+@jit
+def trapezoidal(n):
+    points = np.linspace(-1,1,n)
+    weights = np.empty(n)
+    d = np.empty(n)
+    d[:] = points[1] - points[0]
+    weights[1:-1] = d[1:-1]
+    weights[0] = d[0]/2
+    weights[-1] = d[0]/2
+    return points, weights
 @jit
 def grid_func(k,N_space,t,left,right,dx,mus,tfinal,mode):
     if mode == "static" or mode == "finite2":
@@ -429,9 +463,10 @@ def isotropic_DG_split_staticgrid_rhs_(t,V,N_space,N_ang,mus,ws,LL,M,sigma_t_lis
             RHS = -L_surf+ mul*np.dot(L,U) - sigma_t*U + sigma_s*phi_c + sigma_s*P
             V_new[angle,space,:] = RHS.transpose()
     return V_new.reshape(N_ang*N_space*(M+1))
-def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="linear", weights = "gauss_lobatto"):
+def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="linear", quadmethod = "gauss_lobatto"):
     plt.figure(6)
     if problem == "ganapol":
+        if mode != "finite" or mode != "finite2":
             if (tfinal==1):
                 pl = np.loadtxt("plane001.dat",delimiter="  ", usecols=[1,2])
                 plt.plot(pl[:,0], pl[:,1],'k--')
@@ -444,6 +479,7 @@ def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="lin
                 pl = np.loadtxt("plane010.dat",delimiter="  ", usecols=[1,2])
                 plt.plot(pl[:,0], pl[:,1],'k-')
                 plt.plot(-pl[:,0], pl[:,1],'k-')
+    process(mode)
     N_angles = []
     testpoints = [0.01,0.1,0.25,0.5,0.75,0.9]
     testmatrix = np.zeros((len(N_spaces) + 2, len(testpoints),))
@@ -466,14 +502,15 @@ def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="lin
     for i in range(len(N_spaces)):
         N_space = N_spaces[i]
         N_ang = N_angles[i]
-        if weights == "gauss_lobatto":
+        if quadmethod == "gauss_lobatto":
             mus = quadpy.c1.gauss_lobatto(N_ang).points
             ws = quadpy.c1.gauss_lobatto(N_ang).weights
-        elif weights == "newton_cotes":
-            mus = quadpy.c1.newton_cotes_closed(N_ang-1).points
-            ws = quadpy.c1.newton_cotes_closed(N_ang-1).weights
+        elif quadmethod == "newton_cotes":
+            # mus = quadpy.c1.newton_cotes_closed(N_ang-1).points
+            # ws = quadpy.c1.newton_cotes_closed(N_ang-1).weights
+            mus = trapezoidal(N_ang)[0]
+            ws = trapezoidal(N_ang)[1]
         ws = ws/np.sum(ws)
-        print(mus)
         sigma_s_list = np.ones(N_space)
         sigma_t_list = np.ones(N_space)
         hx = dx/N_space
@@ -493,7 +530,7 @@ def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="lin
             rhs = lambda t,V: isotropic_DG_split_staticgrid_rhs_(t, V, N_space, N_ang, mus, ws, L, M, sigma_t_list, sigma_s_list, dx, left, right, problem, mode, tfinal)
         elif mode == "linear" or mode == "sqrt" or mode == "finite":
             rhs = lambda t,V: isotropic_DG_split_rhs(t, V, N_space, N_ang, mus, ws, L, M, sigma_t_list, sigma_s_list, dx, left, right, problem, mode, tfinal)
-        sol = integrate.solve_ivp(rhs, [0.0,tfinal], IC.reshape(N_ang*N_space*(M+1)), method='RK45', t_eval = [tfinal], rtol = 10e-8, atol = 1e-6)
+        sol = integrate.solve_ivp(rhs, [0.0,tfinal], IC.reshape(N_ang*N_space*(M+1)), method='RK45', t_eval = [tfinal], rtol = 1e-8, atol = 1e-6)
         if not (sol.status == 0):
             print("solver failed %.0f"%N_space)
         sol_last = sol.y[:,-1].reshape((N_ang,N_space,M+1))
@@ -506,18 +543,22 @@ def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="lin
             errRMS[i] = np.sqrt(np.mean((phi  - sol_ganapol(np.abs(xs)))**2))
         RMSdata[1] = errRMS
         if mode =="static":
-            np.save("ganapol_t=%.0f_%.0f_spaces_%.0f_angles_M_%.0f_staticgrid"%(tfinal,N_space,N_ang,M), save_data_phi)
-            np.save("errRMS_stat_M=%.0f_tfinal=%.0f"%(M,tfinal), RMSdata)
-            np.save("testpoints_stat_M=%.0f_tfinal=%.0f"%(M,tfinal),testmatrix)
+            np.save(f"ganapol_t=%.0f_%.0f_spaces_%.0f_angles_M_%.0f_staticgrid_{quadmethod}"%(tfinal,N_space,N_ang,M), save_data_phi)
+            np.save(f"errRMS_stat_M=%.0f_tfinal=%.0f_{quadmethod}"%(M,tfinal), RMSdata)
+            np.save(f"testpoints_stat_M=%.0f_tfinal=%.0f_{quadmethod}"%(M,tfinal),testmatrix)
         elif mode == "linear":
-            np.save("ganapol_t=%.0f_%.0f_spaces_%.0f_angles_M_%.0f_lineargrid"%(tfinal,N_space,N_ang,M), save_data_phi)
-            np.save("errRMS_lin_M=%.0f_tfinal=%.0f"%(M,tfinal), RMSdata)
-            np.save("testpoints_lin_M=%.0f_tfinal=%.0f"%(M,tfinal),testmatrix)
+            np.save(f"ganapol_t=%.0f_%.0f_spaces_%.0f_angles_M_%.0f_lineargrid_{quadmethod}"%(tfinal,N_space,N_ang,M), save_data_phi)
+            np.save(f"errRMS_lin_M=%.0f_tfinal=%.0f_{quadmethod}"%(M,tfinal), RMSdata)
+            np.save(f"testpoints_lin_M=%.0f_tfinal=%.0f_{quadmethod}"%(M,tfinal),testmatrix)
+        elif mode =="finite":
+            np.save(f"ganapol_t=%.0f_%.0f_spaces_%.0f_angles_M_%.0f_finite_{quadmethod}"%(tfinal,N_space,N_ang,M), save_data_phi)
+        elif mode =="finite2":
+            np.save(f"ganapol_t=%.0f_%.0f_spaces_%.0f_angles_M_%.0f_finite2_{quadmethod}"%(tfinal,N_space,N_ang,M), save_data_phi)
         for jt in range(len(testpoints)):
             x = testpoints[jt]
             phipoint = pointsol_func(sol_last, x, tfinal, N_ang, N_space, ws, M, left, right, dx, mus, tfinal, mode)  
             testmatrix[i+2,jt] = phipoint
-        plt.plot(xs,phi,"-", label = "time %.1f"%tfinal)
+        plt.plot(xs,phi,"-o", label = "M = %.0f %.0f spaces t = %.1f"%(M, N_space, tfinal))
         plt.legend()
         for k in range(0,N_space):
             plt.scatter(grid_func(k,N_space,tfinal,left,right,dx,mus,tfinal,mode)[0],0,marker = "|",c="k")
@@ -525,4 +566,4 @@ def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="lin
         plt.show()
     print("Spaces = ", N_spaces,"ERROR RMS = ", errRMS)
     return sol_last
-run_isotropic_DG(tfinal = 1, N_spaces = [2], M = 1, problem ="ganapol", mode = "linear", weights = "newton_cotes")
+run_isotropic_DG(tfinal = 1, N_spaces = [16], M = 2, problem ="ganapol", mode = "finite", quadmethod = "newton_cotes")
