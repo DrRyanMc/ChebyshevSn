@@ -404,7 +404,7 @@ def isotropic_DG_split_rhs(t,V,N_space,N_ang,mus,ws,LL,M,sigma_t_list,sigma_s_li
         G = G_func(space,t,N_space,M,dx,xL,xR,dxL,dxR)
         P = np.zeros(M+1).transpose()
         if mode == "linear" or mode =="sqrt" or mode == "finite":
-            P[0] = (math.exp(-t+dx)/(2*t+dx)*math.sqrt(xR-xL))
+            P[0] = (math.exp(-t)/(2*t+dx)*math.sqrt(xR-xL))
         for i in range(0,M+1):
             phi_c[i]  = np.sum(np.multiply(V_old[:,space,i],ws))
         for angle in range(N_ang):
@@ -564,6 +564,7 @@ def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="lin
             plt.scatter(grid_func(k,N_space,tfinal,left,right,dx,mus,tfinal,mode)[0],0,marker = "|",c="k")
             plt.scatter(grid_func(k,N_space,tfinal,left,right,dx,mus,tfinal,mode)[1],0,marker = "|",c="k"),
         plt.show()
+        plt.plot(xs, sol_ganapol(xs))
     print("Spaces = ", N_spaces,"ERROR RMS = ", errRMS)
     return sol_last
-run_isotropic_DG(tfinal = 1, N_spaces = [16], M = 2, problem ="ganapol", mode = "finite", quadmethod = "newton_cotes")
+run_isotropic_DG(tfinal = 1, N_spaces = [2], M = 1, problem ="ganapol", mode = "linear", quadmethod = "newton_cotes")
