@@ -494,7 +494,7 @@ def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="lin
         N_angles.append(int(N_spaces[ang]*(2**(M+1))))
     errRMS = np.zeros(len(N_spaces))
     if mode == "linear" or mode =="finite":
-        dx = 1e-16
+        dx = 1e-30
     elif mode == "sqrt":
         dx = 1e-12
     else:
@@ -530,7 +530,7 @@ def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="lin
             rhs = lambda t,V: isotropic_DG_split_staticgrid_rhs_(t, V, N_space, N_ang, mus, ws, L, M, sigma_t_list, sigma_s_list, dx, left, right, problem, mode, tfinal)
         elif mode == "linear" or mode == "sqrt" or mode == "finite":
             rhs = lambda t,V: isotropic_DG_split_rhs(t, V, N_space, N_ang, mus, ws, L, M, sigma_t_list, sigma_s_list, dx, left, right, problem, mode, tfinal)
-        sol = integrate.solve_ivp(rhs, [0.0,tfinal], IC.reshape(N_ang*N_space*(M+1)), method='RK45', t_eval = [tfinal], rtol = 1e-8, atol = 1e-6)
+        sol = integrate.solve_ivp(rhs, [0.0,tfinal], IC.reshape(N_ang*N_space*(M+1)), method='RK45', t_eval = [tfinal], rtol = 1e-8, atol = 1e-7)
         if not (sol.status == 0):
             print("solver failed %.0f"%N_space)
         sol_last = sol.y[:,-1].reshape((N_ang,N_space,M+1))
@@ -564,7 +564,8 @@ def run_isotropic_DG(tfinal=1,N_spaces=[2], M = 3, problem="ganapol", mode ="lin
             plt.scatter(grid_func(k,N_space,tfinal,left,right,dx,mus,tfinal,mode)[0],0,marker = "|",c="k")
             plt.scatter(grid_func(k,N_space,tfinal,left,right,dx,mus,tfinal,mode)[1],0,marker = "|",c="k"),
         plt.show()
-        plt.plot(xs, sol_ganapol(xs))
+        xs2 = np.linspace(-1,1)
+        plt.plot(xs, sol_ganapol(np.abs(xs)))
     print("Spaces = ", N_spaces,"ERROR RMS = ", errRMS)
     return sol_last
-run_isotropic_DG(tfinal = 1, N_spaces = [2], M = 1, problem ="ganapol", mode = "linear", quadmethod = "newton_cotes")
+run_isotropic_DG(tfinal = 1, N_spaces = [2], M = 2, problem ="ganapol", mode = "linear", quadmethod = "newton_cotes")
